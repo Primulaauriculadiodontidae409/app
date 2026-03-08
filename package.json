@@ -1,0 +1,29 @@
+{
+  "name": "mango",
+  "version": "1.0.0",
+  "description": "A fast, native MongoDB GUI — built with Perry",
+  "main": "src/app.ts",
+  "perry": {
+    "targets": ["macos", "ios", "android", "linux", "windows"],
+    "icon": "logo/mango-app-icon.svg"
+  },
+  "scripts": {
+    "build": "perry build",
+    "build:macos": "perry build --target macos",
+    "build:ios": "perry build --target ios",
+    "build:android": "perry build --target android",
+    "build:linux": "perry build --target linux",
+    "build:windows": "perry build --target windows",
+    "dev": "perry dev",
+    "dev:macos": "perry dev --target macos",
+    "check": "perry check",
+    "test": "bun test",
+    "test:unit": "bun test tests/connection-store.test.ts tests/preferences.test.ts tests/theme.test.ts tests/document-validation.test.ts",
+    "test:integration": "bun test tests/mongo-client.test.ts"
+  },
+  "author": "Skelpo GmbH",
+  "license": "MIT",
+  "dependencies": {
+    "mongodb": "^7.1.0"
+  }
+}

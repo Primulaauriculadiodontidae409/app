@@ -1,0 +1,25 @@
+# Perry build outputs
+dist/
+*.o
+_perry_failed_stubs.o
+
+# Compiled binaries
+mango
+app
+app_debug
+
+# Node modules
+node_modules/
+
+# IDE
+.vscode/
+.idea/
+
+# macOS
+.DS_Store
+
+# Lock files
+bun.lock
+
+# Internal docs
+mango-product-spec.md

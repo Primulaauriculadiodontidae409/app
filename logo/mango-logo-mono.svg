@@ -1,0 +1,16 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 400 120" width="400" height="120">
+  <!-- Mango fruit body -->
+  <ellipse cx="52" cy="62" rx="36" ry="42" fill="#2B2D42" transform="rotate(-15, 52, 62)"/>
+  
+  <!-- Mango highlight -->
+  <ellipse cx="42" cy="50" rx="14" ry="20" fill="rgba(255,255,255,0.15)" transform="rotate(-15, 42, 50)"/>
+  
+  <!-- Stem -->
+  <path d="M 68 24 Q 72 16 78 12" stroke="#2B2D42" stroke-width="3" fill="none" stroke-linecap="round"/>
+  
+  <!-- Leaf -->
+  <path d="M 78 12 Q 96 4 104 14 Q 96 18 78 12 Z" fill="#2B2D42"/>
+  
+  <!-- Wordmark -->
+  <text x="124" y="76" font-family="'Rubik', 'SF Pro Display', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="52" font-weight="700" fill="#2B2D42" letter-spacing="2">mango</text>
+</svg>
