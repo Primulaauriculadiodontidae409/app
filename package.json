@@ -24,6 +24,7 @@
   "author": "Skelpo GmbH",
   "license": "MIT",
   "dependencies": {
+    "@honeide/editor": "file:../hone/hone-editor",
     "mongodb": "^7.1.0"
   }
 }

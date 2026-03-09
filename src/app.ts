@@ -1,20 +1,22 @@
 import {
   App, VStack, HStack, Text, Button, Spacer, Divider,
-  TextField, ScrollView, ImageFile,
+  TextField, TextArea, ScrollView, ImageFile,
   textSetFontSize, textSetFontWeight, textSetColor, textSetString,
   textSetFontFamily,
   buttonSetBordered, buttonSetTextColor,
   widgetAddChild, widgetClearChildren, widgetSetHidden,
   widgetSetBackgroundColor, widgetSetBackgroundGradient,
-  widgetMatchParentWidth, widgetSetHugging, widgetSetHeight, widgetSetWidth,
+  widgetMatchParentWidth, widgetMatchParentHeight, widgetSetHugging, widgetSetHeight, widgetSetWidth,
   stackSetDistribution, stackSetAlignment,
   setCornerRadius, setPadding,
   scrollviewSetChild,
   textfieldSetString, textfieldGetString,
+  textareaSetString, textareaGetString,
 } from 'perry/ui';
 import { isDarkMode, keychainSave, keychainGet, keychainDelete } from 'perry/system';
 import { MongoClient } from 'mongodb';
-import { getAllConnections, createConnection, deleteConnection } from './data/connection-store';
+import { HoneCodeEditorWidget } from '@honeide/editor/perry';
+import { getAllConnections, createConnection, deleteConnection, saveState, getState } from './data/connection-store';
 
 // --- Theme (matches brand: mangoquery.com) ---
 const dark = isDarkMode();
@@ -111,6 +113,8 @@ loadConnections();
 let formName = '';
 let formHost = 'localhost';
 let formPort = '27017';
+let formUser = '';
+let formPass = '';
 let formUri = '';
 
 let currentDbName = '';
@@ -127,7 +131,50 @@ let lastQueryFilter = '{}';
 
 let editDocJson = '';
 
+// --- Explorer state ---
+let sidebarDbNames: string[] = [];
+let expandedDbIdx = -1;
+// Flat parallel arrays: collDbIdx[k] tells which db index collection collNames[k] belongs to
+let collDbIdx: number[] = [];
+let collNames: string[] = [];
+
 // --- Helpers ---
+
+// Manual JSON pretty-printer (Perry's JSON.stringify ignores indent param)
+function prettyPrintJson(json: string): string {
+  let out = '';
+  let indent = 0;
+  let inString = false;
+  for (let i = 0; i < json.length; i++) {
+    const ch = json[i];
+    if (inString) {
+      out = out + ch;
+      if (ch === '"' && json[i - 1] !== '\\') inString = false;
+      continue;
+    }
+    if (ch === '"') {
+      inString = true;
+      out = out + ch;
+    } else if (ch === '{' || ch === '[') {
+      out = out + ch + '\n';
+      indent = indent + 2;
+      for (let s = 0; s < indent; s++) out = out + ' ';
+    } else if (ch === '}' || ch === ']') {
+      out = out + '\n';
+      indent = indent - 2;
+      for (let s = 0; s < indent; s++) out = out + ' ';
+      out = out + ch;
+    } else if (ch === ',') {
+      out = out + ',\n';
+      for (let s = 0; s < indent; s++) out = out + ' ';
+    } else if (ch === ':') {
+      out = out + ': ';
+    } else if (ch !== ' ' && ch !== '\n' && ch !== '\r' && ch !== '\t') {
+      out = out + ch;
+    }
+  }
+  return out;
+}
 
 // Make a styled label
 function makeLabel(text: string, size: number, bold: boolean): any {
@@ -198,6 +245,23 @@ function makeDangerBtn(label: string, handler: () => void): any {
   buttonSetBordered(btn, 0);
   buttonSetTextColor(btn, erR, erG, erB, 1.0);
   return btn;
+}
+
+// Mask password in a MongoDB URI for display
+function maskPassword(uri: string): string {
+  // Handle mongodb:// and mongodb+srv://
+  const schemeEnd = uri.indexOf('://');
+  if (schemeEnd < 0) return uri;
+  const afterScheme = uri.substring(schemeEnd + 3);
+  const atIdx = afterScheme.indexOf('@');
+  if (atIdx < 0) return uri; // no credentials
+  const userInfo = afterScheme.substring(0, atIdx);
+  const colonIdx = userInfo.indexOf(':');
+  if (colonIdx < 0) return uri; // no password
+  const user = userInfo.substring(0, colonIdx);
+  const scheme = uri.substring(0, schemeEnd + 3);
+  const hostPart = afterScheme.substring(atIdx); // includes @
+  return scheme + user + ':••••••' + hostPart;
 }
 
 // Extract a short display _id from a doc JSON string
@@ -293,12 +357,24 @@ function extractFields(docJson: string): string[][] {
 }
 
 // --- MongoDB ---
+let lastConnError = '';
+
 async function connectToMongo(uri: string): Promise<boolean> {
+  lastConnError = '';
   try {
-    mongoClient = await MongoClient.connect(uri);
-    currentConnUri = uri;
-    return true;
+    const client = await MongoClient.connect(uri);
+    // Validate the connection by listing databases
+    const result = await client.listDatabases();
+    if (typeof result === 'string') {
+      // Connection works
+      mongoClient = client;
+      currentConnUri = uri;
+      return true;
+    }
+    lastConnError = 'Connected but could not list databases';
+    return false;
   } catch (e: any) {
+    lastConnError = e.message || 'Connection failed';
     return false;
   }
 }
@@ -328,6 +404,37 @@ async function deleteDocument(dbName: string, collName: string, filter: string):
   const db = mongoClient.db(dbName);
   const coll = db.collection(collName);
   return await coll.deleteOne(filter);
+}
+
+async function listDatabases(): Promise<string[]> {
+  if (!mongoClient) return [];
+  try {
+    const result = await mongoClient.listDatabases();
+    if (typeof result === 'string') {
+      const parsed = JSON.parse(result);
+      return parsed;
+    }
+    return [];
+  } catch (e: any) {
+    showStatus('Failed to list databases: ' + (e.message || 'unknown error'), true);
+    return [];
+  }
+}
+
+async function listCollections(dbName: string): Promise<string[]> {
+  if (!mongoClient) return [];
+  try {
+    const db = mongoClient.db(dbName);
+    const result = await db.listCollections();
+    if (typeof result === 'string') {
+      const parsed = JSON.parse(result);
+      return parsed;
+    }
+    return [];
+  } catch (e: any) {
+    showStatus('Failed to list collections: ' + (e.message || 'unknown error'), true);
+    return [];
+  }
 }
 
 function extractIdFilter(docJson: string): string {
@@ -465,7 +572,8 @@ function refreshConnectionList(): void {
 
     const nameText = makeLabel(connectionNames[i] || 'Untitled', 15, true);
 
-    const hostPort = connectionUris[i] || `${connectionHosts[i]}:${connectionPorts[i]}`;
+    const rawUri = connectionUris[i];
+    const hostPort = rawUri ? maskPassword(rawUri) : `${connectionHosts[i]}:${connectionPorts[i]}`;
     const detailText = makeMonoMuted(hostPort, 11);
 
     const info = VStack(3, [nameText, detailText]);
@@ -473,13 +581,20 @@ function refreshConnectionList(): void {
     const connectBtn = Button('Connect', async () => {
       const uri = connectionUris[connIdx] || `mongodb://${connectionHosts[connIdx]}:${connectionPorts[connIdx]}`;
       showStatus('Connecting...', false);
+      textSetString(nameText, connectionNames[connIdx] + ' — connecting...');
       const ok = await connectToMongo(uri);
+      textSetString(nameText, connectionNames[connIdx] || 'Untitled');
       if (ok) {
+        widgetSetHidden(statusText, 1);
         currentConnName = connectionNames[connIdx] || 'Server';
         textSetString(connLabel, currentConnName);
+        saveState('lastConnId', connectionIds[connIdx]);
+        saveState('lastConnUri', uri);
+        saveState('lastConnName', currentConnName);
         showScreen(1);
+        await loadDatabases();
       } else {
-        showStatus('Connection failed', true);
+        showStatus('Connection failed: ' + lastConnError, true);
       }
     });
 
@@ -556,22 +671,61 @@ function showConnectionForm(): void {
   const portLabel = makeSecondary('Port', 11);
   const portField = TextField('27017', (val: string) => { formPort = val || '27017'; });
 
-  const divLabel = makeMuted('or connect via URI', 11);
+  const userLabel = makeSecondary('Username (optional)', 11);
+  const userField = TextField('', (val: string) => { formUser = val; });
+
+  const passLabel = makeSecondary('Password (optional)', 11);
+  const passField = TextField('', (val: string) => { formPass = val; });
+
+  const divLabel = makeMuted('or connect via full URI (overrides above)', 11);
 
   const uriLabel = makeSecondary('Connection String', 11);
-  const uriField = TextField('mongodb://user:pass@host:port/db', (val: string) => { formUri = val; });
+  const uriField = TextField('mongodb+srv://user:pass@cluster.example.com/db', (val: string) => { formUri = val; });
 
   const saveBtn = Button('Save Connection', () => {
-    const name = formName || 'Untitled';
-    const host = formHost;
-    createConnection({ name: name, host: host });
-    loadConnections();
+    // Read fields directly from TextFields, fall back to module vars from onChange
+    const name = textfieldGetString(nameField) || formName || 'Untitled';
+    const host = textfieldGetString(hostField) || formHost || 'localhost';
+    const port = textfieldGetString(portField) || formPort || '27017';
+    const user = textfieldGetString(userField) || formUser;
+    const pass = textfieldGetString(passField) || formPass;
+    const rawUri = textfieldGetString(uriField) || formUri;
+
+    // Build URI from fields if no explicit URI provided
+    let uri = rawUri;
+    if (!uri) {
+      if (user && pass) {
+        uri = 'mongodb://' + user + ':' + pass + '@' + host + ':' + port;
+      } else {
+        uri = 'mongodb://' + host + ':' + port;
+      }
+    }
+
+    // Extract host from URI for display in connection list
+    let displayHost = host;
+    const schemeIdx = uri.indexOf('://');
+    if (schemeIdx >= 0) {
+      const afterScheme = uri.substring(schemeIdx + 3);
+      const atIdx = afterScheme.indexOf('@');
+      const hostPart = atIdx >= 0 ? afterScheme.substring(atIdx + 1) : afterScheme;
+      const slashIdx = hostPart.indexOf('/');
+      displayHost = slashIdx >= 0 ? hostPart.substring(0, slashIdx) : hostPart;
+    }
+
+    // Create the connection profile in SQLite
+    const profile: any = createConnection({ name: name, host: displayHost });
+    // Store URI securely in keychain
+    keychainSave('mango-conn-' + profile.id, uri);
+
     formName = '';
     formHost = 'localhost';
     formPort = '27017';
+    formUser = '';
+    formPass = '';
     formUri = '';
     widgetSetHidden(formContainer, 1);
     widgetSetHidden(connListContainer, 0);
+    loadConnections();
     refreshConnectionList();
   });
 
@@ -587,6 +741,10 @@ function showConnectionForm(): void {
   widgetAddChild(formCard, hostField);
   widgetAddChild(formCard, portLabel);
   widgetAddChild(formCard, portField);
+  widgetAddChild(formCard, userLabel);
+  widgetAddChild(formCard, userField);
+  widgetAddChild(formCard, passLabel);
+  widgetAddChild(formCard, passField);
   widgetAddChild(formCard, Divider());
   widgetAddChild(formCard, divLabel);
   widgetAddChild(formCard, uriLabel);
@@ -651,9 +809,18 @@ widgetMatchParentWidth(connBody);
 // ============================================================
 
 const docsContainer = VStack(10, []);
-setPadding(docsContainer, 4, 0, 16, 0);
+setPadding(docsContainer, 4, 4, 16, 4);
 const docsScroll = ScrollView();
 scrollviewSetChild(docsScroll, docsContainer);
+// ScrollView sets distribution=-1 (GravityAreas) and alignment=7 (.width)
+// Don't override — GravityAreas uses intrinsic heights, .width fills cross-axis
+widgetSetHugging(docsScroll, 1); // expand to fill
+
+// Edit container: lives OUTSIDE browserBody to avoid .fill distribution stretching
+const editContainer = VStack(16, []);
+setPadding(editContainer, 20, 24, 16, 24);
+stackSetDistribution(editContainer, 0); // .fill so Spacer absorbs remaining height
+widgetSetHidden(editContainer, 1);
 
 // Initial placeholder
 const docInfoText = makeMuted('Enter a database and collection, then run a query.', 13);
@@ -671,6 +838,17 @@ const disconnectBtn = makeDangerBtn('Disconnect', async () => {
     try { await mongoClient.close(); } catch (e: any) {}
     mongoClient = null;
   }
+  // Clear sidebar state
+  sidebarDbNames = [];
+  expandedDbIdx = -1;
+  collDbIdx = [];
+  collNames = [];
+  renderSidebar();
+  saveState('lastConnId', '');
+  saveState('lastConnUri', '');
+  saveState('lastConnName', '');
+  saveState('lastDb', '');
+  saveState('lastColl', '');
   showScreen(0);
 });
 
@@ -723,12 +901,18 @@ async function runQuery(dbName: string, collName: string, filter: string): Promi
 }
 
 const queryBtn = Button('Run Query', async () => {
-  await runQuery(currentDbName, currentCollName, currentFilter);
+  const db = textfieldGetString(dbField);
+  const coll = textfieldGetString(collField);
+  const filter = textfieldGetString(filterField) || '{}';
+  await runQuery(db, coll, filter);
 });
 
 // --- Edit view ---
 function showEditView(docJson: string): void {
-  widgetClearChildren(docsContainer);
+  // Hide browser body, show edit container (sibling in HStack)
+  widgetSetHidden(browserBody, 1);
+  widgetClearChildren(editContainer);
+  widgetSetHidden(editContainer, 0);
 
   const idFilter = extractIdFilter(docJson);
   const editableJson = removeIdFromJson(docJson);
@@ -741,52 +925,80 @@ function showEditView(docJson: string): void {
     makeMonoMuted(idShort, 11),
   ]);
 
-  const editCard = VStack(10, []);
-  widgetSetBackgroundColor(editCard, sfR, sfG, sfB, 1.0);
-  setCornerRadius(editCard, 10);
-  setPadding(editCard, 16, 20, 16, 20);
-
   const fieldLabel = makeSecondary('Document JSON (without _id)', 11);
 
-  const editField = TextField('{ ... }', (val: string) => { editDocJson = val; });
-  textfieldSetString(editField, editableJson);
-  editDocJson = editableJson;
+  // Pretty-print the JSON for editing
+  const prettyJson = prettyPrintJson(editableJson);
 
-  const saveBtn = Button('Save Changes', async () => {
-    const currentJson = textfieldGetString(editField);
-    const updateStr = '{"$set":' + currentJson + '}';
+  const jsonEditor = new HoneCodeEditorWidget(600, 200, {
+    content: prettyJson,
+    language: 'json',
+    theme: dark ? 'dark' : 'light',
+    fontSize: 13,
+    fontFamily: 'Menlo',
+  });
+  // Wrap editor in a fixed-height container (embedded NSViews resist height constraints)
+  const editorBox = VStack(0, []);
+  widgetSetHeight(editorBox, 200);
+  widgetAddChild(editorBox, jsonEditor.widget);
+
+  const saveBtn = makePrimaryBtn('Save Changes', async () => {
+    showStatus('Saving...', false);
+    const editorContent = jsonEditor.content;
+    let compactJson = editorContent;
+    try { compactJson = JSON.stringify(JSON.parse(editorContent)); } catch (e: any) {}
+    const updateStr = '{"$set":' + compactJson + '}';
     await updateDocument(activeDbName, activeCollName, idFilter, updateStr);
+    showStatus('Document saved', false);
+    // Switch back to doc list
+    widgetSetHidden(editContainer, 1);
+    widgetSetHidden(browserBody, 0);
     const result = await queryCollection(activeDbName, activeCollName, lastQueryFilter);
     displayDocs(result);
   });
 
   const deleteBtn = makeDangerBtn('Delete Document', async () => {
+    showStatus('Deleting...', false);
     const deleted = await deleteDocument(activeDbName, activeCollName, idFilter);
     if (deleted > 0) {
       showStatus('Document deleted', false);
     } else {
       showStatus('Delete failed', true);
     }
+    widgetSetHidden(editContainer, 1);
+    widgetSetHidden(browserBody, 0);
     const result = await queryCollection(activeDbName, activeCollName, lastQueryFilter);
     displayDocs(result);
   });
 
-  const backBtn = makeGhostBtn('Back to results', async () => {
-    const result = await queryCollection(activeDbName, activeCollName, lastQueryFilter);
-    displayDocs(result);
+  const backBtn = makeGhostBtn('Back to results', () => {
+    widgetSetHidden(editContainer, 1);
+    widgetSetHidden(browserBody, 0);
   });
 
+  // Build a compact inner card for the edit UI
+  const editCard = VStack(12, []);
+  widgetSetBackgroundColor(editCard, sfR, sfG, sfB, 1.0);
+  setCornerRadius(editCard, 12);
+  setPadding(editCard, 16, 20, 16, 20);
   widgetAddChild(editCard, editHeader);
   widgetAddChild(editCard, Divider());
   widgetAddChild(editCard, fieldLabel);
-  widgetAddChild(editCard, editField);
+  widgetAddChild(editCard, editorBox);
   widgetAddChild(editCard, HStack(8, [deleteBtn, Spacer(), backBtn, saveBtn]));
 
-  widgetAddChild(docsContainer, editCard);
+  // editContainer is full-height (HStack .fill), so put card at top + spacer absorbs rest
+  widgetAddChild(editContainer, editCard);
+  widgetMatchParentWidth(editCard); // fill the available width so buttons aren't clipped
+  widgetSetHugging(editCard, 750); // card stays compact vertically
+  widgetAddChild(editContainer, Spacer());
 }
 
 // --- Document list ---
 function displayDocs(jsonStr: string): void {
+  // Ensure browser body is visible (might be hidden if coming from edit view)
+  widgetSetHidden(browserBody, 0);
+  widgetSetHidden(editContainer, 1);
   widgetClearChildren(docsContainer);
   let docArray: any[] = [];
   try {
@@ -834,14 +1046,46 @@ function displayDocs(jsonStr: string): void {
     setCornerRadius(card, 10);
     setPadding(card, 12, 16, 12, 16);
 
-    // Header: _id + edit button
+    // Header: _id + delete/edit buttons
     const idLabel = makeMonoMuted(idShort, 10);
 
     const editBtn = Button('Edit', () => { showEditView(docJsonStr); });
     buttonSetBordered(editBtn, 0);
     buttonSetTextColor(editBtn, moR, moG, moB, 1.0);
 
-    const docHeader = HStack(6, [idLabel, Spacer(), editBtn]);
+    // Inline delete with confirmation
+    const delConfirmLabel = makeMuted('Delete this document?', 11);
+    widgetSetHidden(delConfirmLabel, 1);
+
+    const delConfirmYes = makeDangerBtn('Yes, delete', async () => {
+      textSetString(delConfirmLabel, 'Deleting...');
+      textSetColor(delConfirmLabel, tmR, tmG, tmB, 1.0);
+      const idFilter = extractIdFilter(docJsonStr);
+      const deleted = await deleteDocument(activeDbName, activeCollName, idFilter);
+      if (deleted > 0) {
+        showStatus('Document deleted', false);
+      } else {
+        showStatus('Delete failed', true);
+      }
+      const result = await queryCollection(activeDbName, activeCollName, lastQueryFilter);
+      displayDocs(result);
+    });
+    widgetSetHidden(delConfirmYes, 1);
+
+    const delConfirmNo = makeGhostBtn('Cancel', () => {
+      widgetSetHidden(delConfirmLabel, 1);
+      widgetSetHidden(delConfirmYes, 1);
+      widgetSetHidden(delConfirmNo, 1);
+    });
+    widgetSetHidden(delConfirmNo, 1);
+
+    const cardDelBtn = makeDangerBtn('Delete', () => {
+      widgetSetHidden(delConfirmLabel, 0);
+      widgetSetHidden(delConfirmYes, 0);
+      widgetSetHidden(delConfirmNo, 0);
+    });
+
+    const docHeader = HStack(6, [idLabel, Spacer(), delConfirmLabel, delConfirmYes, delConfirmNo, cardDelBtn, editBtn]);
     widgetAddChild(card, docHeader);
 
     // Field rows (skip _id)
@@ -858,7 +1102,165 @@ function displayDocs(jsonStr: string): void {
     }
 
     widgetAddChild(docsContainer, card);
+    widgetMatchParentWidth(card);
   }
+}
+
+// --- Sidebar ---
+const sidebarContainer = VStack(2, []);
+setPadding(sidebarContainer, 8, 8, 8, 8);
+
+const sidebarScroll = ScrollView();
+scrollviewSetChild(sidebarScroll, sidebarContainer);
+widgetSetBackgroundColor(sidebarScroll, tbR, tbG, tbB, 1.0);
+widgetSetWidth(sidebarScroll, 240);
+
+async function loadDatabases(): Promise<void> {
+  // Show loading in sidebar
+  widgetClearChildren(sidebarContainer);
+  const loadingLabel = makeMuted('Loading databases...', 12);
+  setPadding(loadingLabel, 8, 12, 8, 12);
+  widgetAddChild(sidebarContainer, loadingLabel);
+
+  sidebarDbNames = await listDatabases();
+  expandedDbIdx = -1;
+  collDbIdx = [];
+  collNames = [];
+  renderSidebar();
+}
+
+async function loadCollectionsFor(dbIdx: number): Promise<void> {
+  const dbName = sidebarDbNames[dbIdx];
+  // Sidebar already shows "Loading..." via renderSidebar (hasCollectionsFor returns false)
+  const colls = await listCollections(dbName);
+  // Remove old entries for this db
+  const nextIdx: number[] = [];
+  const nextNames: string[] = [];
+  for (let k = 0; k < collDbIdx.length; k++) {
+    if (collDbIdx[k] !== dbIdx) {
+      nextIdx.push(collDbIdx[k]);
+      nextNames.push(collNames[k]);
+    }
+  }
+  // Add new entries
+  for (let k = 0; k < colls.length; k++) {
+    nextIdx.push(dbIdx);
+    nextNames.push(colls[k]);
+  }
+  collDbIdx = nextIdx;
+  collNames = nextNames;
+  renderSidebar();
+}
+
+function hasCollectionsFor(dbIdx: number): boolean {
+  for (let k = 0; k < collDbIdx.length; k++) {
+    if (collDbIdx[k] === dbIdx) return true;
+  }
+  return false;
+}
+
+function getCollectionsFor(dbIdx: number): string[] {
+  const result: string[] = [];
+  for (let k = 0; k < collDbIdx.length; k++) {
+    if (collDbIdx[k] === dbIdx) {
+      result.push(collNames[k]);
+    }
+  }
+  return result;
+}
+
+function renderSidebar(): void {
+  widgetClearChildren(sidebarContainer);
+
+  // Header
+  const hdr = makeLabel('Explorer', 13, true);
+  setPadding(hdr, 6, 12, 10, 12);
+  widgetAddChild(sidebarContainer, hdr);
+
+  if (sidebarDbNames.length === 0) {
+    const empty = makeMuted('No databases', 12);
+    setPadding(empty, 4, 12, 4, 12);
+    widgetAddChild(sidebarContainer, empty);
+    return;
+  }
+
+  for (let i = 0; i < sidebarDbNames.length; i++) {
+    const dbIdx = i;
+    const dbName = sidebarDbNames[i];
+    const isExpanded = (expandedDbIdx === i);
+
+    // Database row — use db icon with chevron in the button label
+    const dbIcon = Text(isExpanded ? '⌄' : '›');
+    textSetFontSize(dbIcon, 14);
+    textSetFontWeight(dbIcon, 14, 0.3);
+    textSetColor(dbIcon, tmR, tmG, tmB, 1.0);
+
+    const dbBtn = Button(dbName, () => {
+      if (expandedDbIdx === dbIdx) {
+        expandedDbIdx = -1;
+        renderSidebar();
+      } else {
+        expandedDbIdx = dbIdx;
+        renderSidebar();
+        // Load collections in background if not cached
+        if (!hasCollectionsFor(dbIdx)) {
+          loadCollectionsFor(dbIdx);
+        }
+      }
+    });
+    buttonSetBordered(dbBtn, 0);
+    buttonSetTextColor(dbBtn, txR, txG, txB, 1.0);
+
+    const dbRow = HStack(6, [dbIcon, dbBtn]);
+    setPadding(dbRow, 5, 12, 5, 12);
+
+    widgetAddChild(sidebarContainer, dbRow);
+
+    // Collections (if expanded)
+    if (isExpanded) {
+      const colls = getCollectionsFor(dbIdx);
+      if (colls.length === 0) {
+        const loading = makeMuted('Loading...', 11);
+        setPadding(loading, 3, 36, 3, 36);
+        widgetAddChild(sidebarContainer, loading);
+      } else {
+        for (let c = 0; c < colls.length; c++) {
+          const collName = colls[c];
+          const collIcon = Text('◦');
+          textSetFontSize(collIcon, 10);
+          textSetColor(collIcon, tsR, tsG, tsB, 1.0);
+
+          const collBtn = Button(collName, async () => {
+            activeDbName = dbName;
+            activeCollName = collName;
+            currentDbName = dbName;
+            currentCollName = collName;
+            saveState('lastDb', dbName);
+            saveState('lastColl', collName);
+            textfieldSetString(dbField, dbName);
+            textfieldSetString(collField, collName);
+            showStatus('Loading ' + dbName + '.' + collName + '...', false);
+            await runQuery(dbName, collName, '{}');
+            widgetSetHidden(statusText, 1);
+          });
+          buttonSetBordered(collBtn, 0);
+          buttonSetTextColor(collBtn, txR, txG, txB, 1.0);
+
+          const collRow = HStack(6, [collIcon, collBtn]);
+          setPadding(collRow, 3, 36, 3, 36);
+
+          widgetAddChild(sidebarContainer, collRow);
+        }
+      }
+    }
+  }
+
+  // Refresh button at bottom
+  const refreshBtn = makeGhostBtn('Refresh', async () => {
+    await loadDatabases();
+  });
+  setPadding(refreshBtn, 8, 12, 8, 12);
+  widgetAddChild(sidebarContainer, refreshBtn);
 }
 
 // --- Browser screen layout ---
@@ -877,8 +1279,11 @@ setPadding(queryCard, 16, 20, 16, 20);
 
 const queryTitle = makeLabel('Query', 14, true);
 
-// Inline target: db.collection
-const dbColRow = HStack(8, [dbField, makeSecondary('.', 13), collField]);
+// Inline target: db.collection — give both fields explicit widths
+const dotSep = makeSecondary('.', 13);
+const dbColRow = HStack(4, [dbField, dotSep, collField]);
+widgetSetWidth(dbField, 250);
+widgetSetWidth(collField, 250);
 
 widgetAddChild(queryCard, queryTitle);
 widgetAddChild(queryCard, makeSecondary('Database . Collection', 10));
@@ -890,14 +1295,26 @@ widgetAddChild(queryCard, HStack(8, [breadcrumb, Spacer(), queryBtn]));
 // Main browser body with query + results
 const browserBody = VStack(16, [queryCard, docsScroll]);
 setPadding(browserBody, 20, 24, 16, 24);
+stackSetDistribution(browserBody, 0);   // .fill — docsScroll fills remaining height
+widgetSetHugging(queryCard, 750);        // query card stays compact
+
+// Sidebar + main content layout (editContainer is sibling of browserBody, toggled on edit)
+const browserContent = HStack(0, [sidebarScroll, browserBody, editContainer]);
+stackSetDistribution(browserContent, 0); // .fill
+widgetSetHugging(sidebarScroll, 750); // sidebar stays fixed
+widgetSetHugging(browserBody, 1);     // body expands to fill
+widgetSetHugging(editContainer, 1);   // edit panel expands to fill when visible
 
 const browserScreen = VStack(0, [
   toolbarBox,
   Divider(),
-  browserBody,
+  browserContent,
 ]);
 widgetSetBackgroundColor(browserScreen, bgR, bgG, bgB, 1.0);
 widgetSetHidden(browserScreen, 1);
+stackSetDistribution(browserScreen, 0);   // .fill — children stretch to fill
+widgetSetHugging(toolbarBox, 750);         // toolbar stays compact
+widgetSetHugging(browserContent, 1);       // content area expands to fill remaining space
 
 // --- Screen switching ---
 function showScreen(idx: number): void {
@@ -910,6 +1327,44 @@ function showScreen(idx: number): void {
   }
 }
 
+// --- Restore last session ---
+async function restoreLastSession(): Promise<void> {
+  const lastUri = getState('lastConnUri');
+  const lastName = getState('lastConnName');
+  if (!lastUri) return;
+
+  showStatus('Reconnecting...', false);
+  const ok = await connectToMongo(lastUri);
+  if (!ok) {
+    if (lastConnError) {
+      showStatus('Reconnect failed: ' + lastConnError, true);
+    } else {
+      widgetSetHidden(statusText, 1);
+    }
+    return;
+  }
+  widgetSetHidden(statusText, 1);
+
+  currentConnName = lastName || 'Server';
+  textSetString(connLabel, currentConnName);
+  showScreen(1);
+  await loadDatabases();
+
+  // Restore last db/collection
+  const lastDb = getState('lastDb');
+  const lastColl = getState('lastColl');
+  if (lastDb && lastColl) {
+    activeDbName = lastDb;
+    activeCollName = lastColl;
+    currentDbName = lastDb;
+    currentCollName = lastColl;
+    textfieldSetString(dbField, lastDb);
+    textfieldSetString(collField, lastColl);
+    await runQuery(lastDb, lastColl, '{}');
+  }
+}
+restoreLastSession();
+
 // --- Launch ---
 const appBody = VStack(0, [connectionScreen, browserScreen]);
 widgetSetBackgroundColor(appBody, bgR, bgG, bgB, 1.0);
@@ -917,10 +1372,17 @@ widgetSetBackgroundColor(appBody, bgR, bgG, bgB, 1.0);
 // Force screens to fill full window width
 widgetMatchParentWidth(connectionScreen);
 widgetMatchParentWidth(browserScreen);
+// Pin HStack to browserScreen's full width so sidebar+body stretch
+widgetMatchParentWidth(browserContent);
+widgetMatchParentWidth(toolbarBox);
+// Pin browserBody children to fill width
+widgetMatchParentWidth(queryCard);
+widgetMatchParentWidth(docsScroll);
 
 App({
   title: 'Mango',
   width: 1100,
   height: 750,
+  icon: 'logo/mango-app-icon-512.png',
   body: appBody,
 });

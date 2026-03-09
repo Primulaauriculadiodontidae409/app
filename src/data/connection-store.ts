@@ -82,3 +82,25 @@ export function deleteConnection(id: string): void {
   const params = JSON.stringify([id]);
   stmt.run(params);
 }
+
+// --- App state persistence ---
+db.exec(`
+  CREATE TABLE IF NOT EXISTS app_state (
+    key TEXT PRIMARY KEY,
+    value TEXT NOT NULL
+  )
+`);
+
+export function saveState(key: string, value: string): void {
+  const stmt = db.prepare('INSERT OR REPLACE INTO app_state (key, value) VALUES (?, ?)');
+  const params = JSON.stringify([key, value]);
+  stmt.run(params);
+}
+
+export function getState(key: string): string {
+  const stmt = db.prepare('SELECT value FROM app_state WHERE key = ?');
+  const params = JSON.stringify([key]);
+  const row: any = stmt.get(params);
+  if (row) return row.value as string;
+  return '';
+}
