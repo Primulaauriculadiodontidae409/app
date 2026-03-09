@@ -8,6 +8,9 @@ mango
 app
 app_debug
 
+# Runtime data
+*.db
+
 # Node modules
 node_modules/
 

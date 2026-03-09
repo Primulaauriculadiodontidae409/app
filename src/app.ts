@@ -7,12 +7,14 @@ import {
   widgetAddChild, widgetClearChildren, widgetSetHidden,
   widgetSetBackgroundColor, widgetSetBackgroundGradient,
   widgetMatchParentWidth, widgetSetHugging, widgetSetHeight, widgetSetWidth,
+  stackSetDistribution, stackSetAlignment,
   setCornerRadius, setPadding,
   scrollviewSetChild,
   textfieldSetString, textfieldGetString,
 } from 'perry/ui';
-import { isDarkMode } from 'perry/system';
+import { isDarkMode, keychainSave, keychainGet, keychainDelete } from 'perry/system';
 import { MongoClient } from 'mongodb';
+import { getAllConnections, createConnection, deleteConnection } from './data/connection-store';
 
 // --- Theme (matches brand: mangoquery.com) ---
 const dark = isDarkMode();
@@ -79,10 +81,32 @@ const monoFont = 'Menlo';
 const uiFont = 'Rubik';
 
 // --- State ---
+let connectionIds: string[] = [];
 let connectionNames: string[] = [];
 let connectionHosts: string[] = [];
 let connectionPorts: string[] = [];
 let connectionUris: string[] = [];
+
+// Load saved connections from SQLite + Keychain
+function loadConnections(): void {
+  const profiles = getAllConnections();
+  connectionIds = [];
+  connectionNames = [];
+  connectionHosts = [];
+  connectionPorts = [];
+  connectionUris = [];
+  for (let i = 0; i < profiles.length; i++) {
+    const p: any = profiles[i];
+    connectionIds.push(p.id);
+    connectionNames.push(p.name);
+    connectionHosts.push(p.host);
+    connectionPorts.push(String(p.port));
+    // Connection URI stored securely in Keychain
+    const uri = keychainGet('mango-conn-' + p.id);
+    connectionUris.push(typeof uri === 'string' ? uri : '');
+  }
+}
+loadConnections();
 
 let formName = '';
 let formHost = 'localhost';
@@ -380,10 +404,6 @@ function refreshConnectionList(): void {
     setCornerRadius(welcomeCard, 14);
     setPadding(welcomeCard, 32, 36, 28, 36);
 
-    const welcomeIcon = ImageFile('logo/mango-app-icon-128.png');
-    widgetSetWidth(welcomeIcon, 48);
-    widgetSetHeight(welcomeIcon, 48);
-
     const welcomeTitle = Text('Welcome to Mango');
     textSetFontSize(welcomeTitle, 24);
     textSetFontFamily(welcomeTitle, uiFont);
@@ -420,13 +440,13 @@ function refreshConnectionList(): void {
     setCornerRadius(ctaBtn, 8);
     setPadding(ctaBtn, 10, 20, 10, 20);
 
-    widgetAddChild(welcomeCard, welcomeIcon);
     widgetAddChild(welcomeCard, welcomeTitle);
     widgetAddChild(welcomeCard, welcomeHint);
     widgetAddChild(welcomeCard, pillGrid);
     widgetAddChild(welcomeCard, ctaBtn);
 
     widgetAddChild(connListContainer, welcomeCard);
+    widgetMatchParentWidth(welcomeCard);
     return;
   }
 
@@ -464,22 +484,9 @@ function refreshConnectionList(): void {
     });
 
     const deleteBtn = makeDangerBtn('Remove', () => {
-      const newNames: string[] = [];
-      const newHosts: string[] = [];
-      const newPorts: string[] = [];
-      const newUris: string[] = [];
-      for (let j = 0; j < connectionNames.length; j++) {
-        if (j !== connIdx) {
-          newNames.push(connectionNames[j]);
-          newHosts.push(connectionHosts[j]);
-          newPorts.push(connectionPorts[j]);
-          newUris.push(connectionUris[j]);
-        }
-      }
-      connectionNames = newNames;
-      connectionHosts = newHosts;
-      connectionPorts = newPorts;
-      connectionUris = newUris;
+      keychainDelete('mango-conn-' + connectionIds[connIdx]);
+      deleteConnection(connectionIds[connIdx]);
+      loadConnections();
       refreshConnectionList();
     });
 
@@ -490,6 +497,7 @@ function refreshConnectionList(): void {
     setPadding(card, 12, 16, 12, 16);
 
     widgetAddChild(connListContainer, card);
+    widgetMatchParentWidth(card);
   }
 }
 
@@ -524,10 +532,21 @@ function showConnectionForm(): void {
   const uriField = TextField('mongodb://user:pass@host:port/db', (val: string) => { formUri = val; });
 
   const saveBtn = Button('Save Connection', () => {
-    connectionNames.push(formName || 'Untitled');
-    connectionHosts.push(formHost);
-    connectionPorts.push(formPort);
-    connectionUris.push(formUri);
+    const name = formName || 'Untitled';
+    const host = formHost;
+    const port = parseInt(formPort) || 27017;
+    const uri = formUri;
+    const profile = createConnection({
+      name,
+      host,
+      port,
+      useConnectionString: uri.length > 0,
+    });
+    // Store URI securely in platform keychain (macOS Keychain, Windows Credential Manager, etc.)
+    if (uri) {
+      keychainSave('mango-conn-' + profile.id, uri);
+    }
+    loadConnections();
     formName = '';
     formHost = 'localhost';
     formPort = '27017';
@@ -556,21 +575,13 @@ function showConnectionForm(): void {
   widgetAddChild(formCard, HStack(8, [cancelBtn, Spacer(), saveBtn]));
 
   widgetAddChild(formContainer, formCard);
+  widgetMatchParentWidth(formCard);
 }
 
 // Build connection screen
 refreshConnectionList();
 
-const addBtn = Button('+ New Connection', () => { showConnectionForm(); });
-buttonSetTextColor(addBtn, moR, moG, moB, 1.0);
-
-// --- Hero header with warm gradient ---
-const heroBox = VStack(10, []);
-// Warm orange-to-yellow gradient (horizontal)
-widgetSetBackgroundGradient(heroBox, moR, moG, moB, 1.0, myR, myG, myB, 1.0, 1);
-setPadding(heroBox, 44, 60, 36, 60);
-
-// Logo + title row
+// --- Hero banner (full-width via ScrollView Width alignment) ---
 const heroLogo = ImageFile('logo/mango-app-icon-128.png');
 widgetSetWidth(heroLogo, 56);
 widgetSetHeight(heroLogo, 56);
@@ -581,34 +592,40 @@ textSetFontFamily(heroTitle, uiFont);
 textSetFontWeight(heroTitle, 38, 0.7);
 textSetColor(heroTitle, 1.0, 1.0, 1.0, 1.0);
 
-const heroTitleRow = HStack(14, [heroLogo, heroTitle]);
-
 const heroSubtitle = Text('MongoDB, finally fast.');
 textSetFontSize(heroSubtitle, 16);
 textSetFontFamily(heroSubtitle, uiFont);
 textSetColor(heroSubtitle, 1.0, 1.0, 1.0, 0.85);
 
-widgetAddChild(heroBox, heroTitleRow);
-widgetAddChild(heroBox, heroSubtitle);
+const heroBox = VStack(8, [
+  HStack(14, [heroLogo, heroTitle]),
+  heroSubtitle,
+]);
+widgetSetBackgroundGradient(heroBox, moR, moG, moB, 1.0, myR, myG, myB, 1.0, 1);
+setPadding(heroBox, 44, 380, 36, 380); // symmetric padding centers ~340px content in 1100px window
 
 // --- Body content below hero ---
 const connBody = VStack(16, [
-  HStack(8, [statusText, Spacer(), addBtn]),
+  statusText,
   connListContainer,
   formContainer,
 ]);
 setPadding(connBody, 28, 60, 32, 60);
 
-// All content in the document VStack
-const connContent = VStack(0, [
-  heroBox,
-  connBody,
-]);
+// Force containers to fill width (must be after connBody creation so parent exists)
+widgetMatchParentWidth(connListContainer);
+widgetMatchParentWidth(formContainer);
 
-// ScrollView: cream bg, natural element heights, full-width children
+// All content in ScrollView — hero + body
+const connContent = VStack(0, [heroBox, connBody]);
+
 const connectionScreen = ScrollView();
 scrollviewSetChild(connectionScreen, connContent);
 widgetSetBackgroundColor(connectionScreen, bgR, bgG, bgB, 1.0);
+
+// Force hero to fill full width
+widgetMatchParentWidth(heroBox);
+widgetMatchParentWidth(connBody);
 
 // ============================================================
 //  BROWSER SCREEN
