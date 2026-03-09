@@ -1,4 +1,11 @@
 import Database from 'better-sqlite3';
 
-// Shared SQLite instance — initialized at module load.
-export const db = new Database('mango.db');
+let instance: any = null;
+
+/** Return the shared SQLite instance, creating it on first call. */
+export function getDatabase(): any {
+  if (!instance) {
+    instance = new Database('mango.db');
+  }
+  return instance;
+}
