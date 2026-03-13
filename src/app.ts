@@ -403,22 +403,33 @@ async function queryCollection(dbName: string, collName: string, filter: string)
     if (typeof docs === 'string') return docs;
     return JSON.stringify(docs);
   } catch (e: any) {
-    return '{"error":"' + (e.message || 'query failed') + '"}';
+    const msg = (e.message || 'query failed').replace(/\\/g, '\\\\').replace(/"/g, '\\"');
+    return '{"error":"' + msg + '"}';
   }
 }
 
 async function updateDocument(dbName: string, collName: string, filter: string, update: string): Promise<number> {
   if (!mongoClient) return 0;
-  const db = mongoClient.db(dbName);
-  const coll = db.collection(collName);
-  return await coll.updateOne(filter, update);
+  try {
+    const db = mongoClient.db(dbName);
+    const coll = db.collection(collName);
+    return await coll.updateOne(filter, update);
+  } catch (e: any) {
+    showStatus('Update failed: ' + (e.message || 'unknown error'), true);
+    return 0;
+  }
 }
 
 async function deleteDocument(dbName: string, collName: string, filter: string): Promise<number> {
   if (!mongoClient) return 0;
-  const db = mongoClient.db(dbName);
-  const coll = db.collection(collName);
-  return await coll.deleteOne(filter);
+  try {
+    const db = mongoClient.db(dbName);
+    const coll = db.collection(collName);
+    return await coll.deleteOne(filter);
+  } catch (e: any) {
+    showStatus('Delete failed: ' + (e.message || 'unknown error'), true);
+    return 0;
+  }
 }
 
 async function listDatabases(): Promise<string[]> {
@@ -485,7 +496,8 @@ function removeIdFromJson(docJson: string): string {
       if (depth === 0) { valueEnd = i + 1; break; }
     }
   } else if (docJson[valueStart] === '"') {
-    valueEnd = docJson.indexOf('"', valueStart + 1) + 1;
+    const endQuote = docJson.indexOf('"', valueStart + 1);
+    valueEnd = endQuote >= 0 ? endQuote + 1 : docJson.length;
   } else {
     for (let i = valueStart; i < docJson.length; i++) {
       if (docJson[i] === ',' || docJson[i] === '}') { valueEnd = i; break; }
@@ -493,8 +505,8 @@ function removeIdFromJson(docJson: string): string {
   }
   let before = docJson.substring(0, idStart);
   let after = docJson.substring(valueEnd);
-  if (after[0] === ',') after = after.substring(1);
-  else if (before[before.length - 1] === ',') before = before.substring(0, before.length - 1);
+  if (after.length > 0 && after[0] === ',') after = after.substring(1);
+  else if (before.length > 0 && before[before.length - 1] === ',') before = before.substring(0, before.length - 1);
   return before + after;
 }
 
@@ -719,7 +731,7 @@ function showConnectionForm(): void {
     let uri = rawUri;
     if (!uri) {
       if (user && pass) {
-        uri = 'mongodb://' + user + ':' + pass + '@' + host + ':' + port;
+        uri = 'mongodb://' + encodeURIComponent(user) + ':' + encodeURIComponent(pass) + '@' + host + ':' + port;
       } else {
         uri = 'mongodb://' + host + ':' + port;
       }
@@ -983,7 +995,10 @@ function showEditView(docJson: string): void {
     showStatus('Saving...', false);
     const editorContent = jsonEditor.content;
     let compactJson = editorContent;
-    try { compactJson = JSON.stringify(JSON.parse(editorContent)); } catch (e: any) {}
+    try { compactJson = JSON.stringify(JSON.parse(editorContent)); } catch (e: any) {
+      showStatus('Invalid JSON: ' + (e.message || 'parse error'), true);
+      return;
+    }
     const updateStr = '{"$set":' + compactJson + '}';
     await updateDocument(activeDbName, activeCollName, idFilter, updateStr);
     showStatus('Document saved', false);

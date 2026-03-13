@@ -57,18 +57,20 @@ export class MangoClient {
 
   async connect(uri: string): Promise<void> {
     const start = Date.now();
-    this.client = new MongoClient(uri);
-    await this.client.connect();
+    const client = new MongoClient(uri);
+    await client.connect();
+    this.client = client;
     this._latencyMs = Date.now() - start;
     this._isConnected = true;
   }
 
   async disconnect(): Promise<void> {
     if (this.client) {
-      await this.client.close();
+      const client = this.client;
       this.client = null;
       this._isConnected = false;
       this._latencyMs = 0;
+      try { await client.close(); } catch (_) {}
     }
   }
 
