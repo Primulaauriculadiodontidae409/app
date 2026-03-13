@@ -1154,7 +1154,7 @@ function displayDocs(jsonStr: string): void {
       const keyText = makeSecondary(key, 12);
       const valText = makeMono(val, 12);
 
-      const fieldRow = HStack(8, [keyText, valText]);
+      const fieldRow = HStack(8, [keyText, Spacer(), valText]);
       widgetAddChild(card, fieldRow);
     }
 
@@ -1270,7 +1270,7 @@ function renderSidebar(): void {
     buttonSetBordered(dbBtn, 0);
     buttonSetTextColor(dbBtn, txR, txG, txB, 1.0);
 
-    const dbRow = HStack(6, [dbIcon, dbBtn]);
+    const dbRow = HStack(6, [dbIcon, dbBtn, Spacer()]);
     setPadding(dbRow, 5, 12, 5, 12);
 
     widgetAddChild(sidebarContainer, dbRow);
@@ -1307,7 +1307,7 @@ function renderSidebar(): void {
           buttonSetBordered(collBtn, 0);
           buttonSetTextColor(collBtn, txR, txG, txB, 1.0);
 
-          const collRow = HStack(6, [collIcon, collBtn]);
+          const collRow = HStack(6, [collIcon, collBtn, Spacer()]);
           setPadding(collRow, 3, 36, 3, 36);
 
           widgetAddChild(sidebarContainer, collRow);
@@ -1376,7 +1376,7 @@ let dbColRow: any;
 if (mobile) {
   dbColRow = VStack(6, [dbField, collField]);
 } else {
-  dbColRow = HStack(4, [dbField, dotSep, collField]);
+  dbColRow = HStack(4, [dbField, dotSep, collField, Spacer()]);
   widgetSetWidth(dbField, 250);
   widgetSetWidth(collField, 250);
 }
