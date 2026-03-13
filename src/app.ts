@@ -13,14 +13,17 @@ import {
   textfieldSetString, textfieldGetString,
   textareaSetString, textareaGetString,
 } from 'perry/ui';
-import { isDarkMode, keychainSave, keychainGet, keychainDelete } from 'perry/system';
+import { isDarkMode, keychainSave, keychainGet, keychainDelete, getDeviceIdiom } from 'perry/system';
 import { MongoClient } from 'mongodb';
 import { HoneCodeEditorWidget } from '@honeide/editor/perry';
 import { getAllConnections, createConnection, deleteConnection, saveState, getState } from './data/connection-store';
 
 // --- Platform detection (compile-time: 0=macOS, 1=iOS, 2=Android) ---
 declare const __platform__: number;
-const mobile = __platform__ === 1 || __platform__ === 2;
+const isIOS = __platform__ === 1;
+const iPad = isIOS && getDeviceIdiom() === 1;
+// iPad uses desktop layout (sidebar always visible, wider padding); iPhone/Android use mobile layout
+const mobile = (__platform__ === 1 || __platform__ === 2) && !iPad;
 
 // --- Theme (matches brand: mangoquery.com) ---
 const dark = isDarkMode();
@@ -81,10 +84,10 @@ const brG = dark ? 0.302 : 0.914;
 const brB = dark ? 0.416 : 0.929;
 
 // Monospace font — platform-specific
-const monoFont = mobile ? 'monospace' : 'JetBrains Mono';
+const monoFont = isIOS ? 'Menlo' : (__platform__ === 2 ? 'monospace' : 'JetBrains Mono');
 
-// UI font — Rubik on macOS, system font on iOS
-const uiFont = mobile ? '.AppleSystemUIFont' : 'Rubik';
+// UI font — system font on iOS/iPad, Rubik on desktop
+const uiFont = isIOS ? '.AppleSystemUIFont' : 'Rubik';
 
 // --- State ---
 let connectionIds: string[] = [];
@@ -826,6 +829,8 @@ const heroBox = VStack(8, [
 widgetSetBackgroundGradient(heroBox, moR, moG, moB, 1.0, myR, myG, myB, 1.0, 1);
 if (mobile) {
   setPadding(heroBox, 60, 24, 28, 24); // top padding for status bar safe area
+} else if (iPad) {
+  setPadding(heroBox, 60, 120, 36, 120); // safe area top + iPad-width horizontal padding
 } else {
   setPadding(heroBox, 44, 380, 36, 380); // symmetric padding centers ~340px content in 1100px window
 }
@@ -1354,7 +1359,7 @@ if (mobile) {
   toolbarRow = HStack(10, [browserLogo, browserTitle, Spacer(), connLabel, disconnectBtn]);
 }
 const toolbarBox = VStack(0, [toolbarRow]);
-setPadding(toolbarBox, mobile ? 52 : 12, mobile ? 16 : 24, 12, mobile ? 16 : 24); // iOS top safe area
+setPadding(toolbarBox, isIOS ? 52 : 12, mobile ? 16 : 24, 12, mobile ? 16 : 24); // iOS/iPad top safe area
 widgetSetBackgroundColor(toolbarBox, sfR, sfG, sfB, 1.0);
 
 // Query card
