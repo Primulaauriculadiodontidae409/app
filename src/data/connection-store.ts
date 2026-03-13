@@ -1,5 +1,24 @@
 import Database from 'better-sqlite3';
 
+declare const __platform__: number;
+const isWeb = __platform__ === 5;
+
+// Web: localStorage-based persistence (no SQLite in browser)
+let webTransient = false;
+export function setWebTransient(t: boolean): void { webTransient = t; }
+
+function webGetConnections(): any[] {
+  if (webTransient) return [];
+  const raw = localStorage.getItem('mango-connections');
+  if (!raw) return [];
+  try { return JSON.parse(raw); } catch (e: any) { return []; }
+}
+
+function webSaveConnections(conns: any[]): void {
+  if (webTransient) return;
+  localStorage.setItem('mango-connections', JSON.stringify(conns));
+}
+
 export interface ConnectionProfile {
   id: string;
   name: string;
@@ -77,8 +96,8 @@ function initDb(): any {
   return d;
 }
 
-// Initialize at module load time
-initDb();
+// Initialize at module load time (skip on web — no SQLite)
+if (!isWeb) initDb();
 
 function rowToProfile(row: any): any {
   const r = row as any;
@@ -105,6 +124,7 @@ function rowToProfile(row: any): any {
 }
 
 export function getAllConnections(): any[] {
+  if (isWeb) return webGetConnections();
   const db: any = initDb();
   const rows: any = db.prepare(
     'SELECT * FROM connections ORDER BY updated_at DESC'
@@ -120,6 +140,19 @@ export function getAllConnections(): any[] {
 }
 
 export function createConnection(data: any): any {
+  if (isWeb) {
+    const now = Date.now();
+    const id = generateId();
+    const profile = {
+      id: id, name: data.name || 'Untitled', host: data.host || 'localhost',
+      port: data.port || 27017, connectionString: data.connectionString || '',
+      createdAt: now, updatedAt: now,
+    };
+    const conns = webGetConnections();
+    conns.push(profile);
+    webSaveConnections(conns);
+    return profile;
+  }
   const db: any = initDb();
   const now = Date.now();
   const id = generateId();
@@ -142,6 +175,15 @@ export function createConnection(data: any): any {
 }
 
 export function deleteConnection(id: string): boolean {
+  if (isWeb) {
+    const conns = webGetConnections();
+    const filtered: any[] = [];
+    for (let i = 0; i < conns.length; i++) {
+      if (conns[i].id !== id) filtered.push(conns[i]);
+    }
+    webSaveConnections(filtered);
+    return true;
+  }
   const db: any = initDb();
   db.prepare("DELETE FROM connections WHERE id = '" + esc(id) + "'").run();
   return true;
@@ -150,11 +192,18 @@ export function deleteConnection(id: string): boolean {
 // --- App state persistence ---
 
 export function saveState(key: string, value: string): void {
+  if (isWeb) {
+    if (!webTransient) localStorage.setItem('mango-state-' + key, value);
+    return;
+  }
   const db: any = initDb();
   db.prepare("INSERT OR REPLACE INTO app_state (key, value) VALUES ('" + esc(key) + "', '" + esc(value) + "')").run();
 }
 
 export function getState(key: string): string {
+  if (isWeb) {
+    return localStorage.getItem('mango-state-' + key) || '';
+  }
   const db: any = initDb();
   const row: any = db.prepare("SELECT value FROM app_state WHERE key = '" + esc(key) + "'").get();
   if (row) return (row as any).value;

@@ -61,6 +61,7 @@ plugin({
         isAndroid: false,
         isWindows: false,
         isLinux: false,
+        isWeb: false,
       },
       loader: 'object',
     }));

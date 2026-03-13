@@ -17,10 +17,16 @@ import { isDarkMode, keychainSave, keychainGet, keychainDelete, getDeviceIdiom }
 import { MongoClient } from 'mongodb';
 import { HoneCodeEditorWidget } from '@honeide/editor/perry';
 import { getAllConnections, createConnection, deleteConnection, saveState, getState } from './data/connection-store';
+import {
+  webConnect, webIsServerConnected, webSetStatusCallback,
+  webConnectToMongo, webDisconnect, webListDatabases, webListCollections,
+  webQueryCollection, webUpdateDocument, webDeleteDocument, webInsertDocument,
+} from './data/web-mongo-client';
 
-// --- Platform detection (compile-time: 0=macOS, 1=iOS, 2=Android) ---
+// --- Platform detection (compile-time: 0=macOS, 1=iOS, 2=Android, 3=Windows, 4=Linux, 5=Web) ---
 declare const __platform__: number;
 const isIOS = __platform__ === 1;
+const isWeb = __platform__ === 5;
 const iPad = isIOS && getDeviceIdiom() === 1;
 // iPad uses desktop layout (sidebar always visible, wider padding); iPhone/Android use mobile layout
 const mobile = (__platform__ === 1 || __platform__ === 2) && !iPad;
@@ -84,10 +90,12 @@ const brG = dark ? 0.302 : 0.914;
 const brB = dark ? 0.416 : 0.929;
 
 // Monospace font — platform-specific
-const monoFont = isIOS ? 'Menlo' : (__platform__ === 2 ? 'monospace' : 'JetBrains Mono');
+const monoFont = isWeb ? 'ui-monospace, Menlo, Monaco, Consolas, monospace' :
+                 isIOS ? 'Menlo' : (__platform__ === 2 ? 'monospace' : 'JetBrains Mono');
 
-// UI font — system font on iOS/iPad, Rubik on desktop
-const uiFont = isIOS ? '.AppleSystemUIFont' : 'Rubik';
+// UI font — system font on iOS/iPad, system-ui on web, Rubik on desktop
+const uiFont = isWeb ? 'system-ui, -apple-system, sans-serif' :
+               isIOS ? '.AppleSystemUIFont' : 'Rubik';
 
 // --- State ---
 let connectionIds: string[] = [];
@@ -117,9 +125,9 @@ function loadConnections(): void {
     connectionNames.push(p.name || 'Untitled');
     connectionHosts.push(p.host || 'localhost');
     connectionPorts.push(String(p.port || 27017));
-    // URI from SQLite, fall back to Keychain for backward compat
+    // URI from SQLite, fall back to Keychain for backward compat (not on web)
     let uri = p.connectionString || '';
-    if (!uri) {
+    if (!uri && !isWeb) {
       try { const k = keychainGet('mango-conn-' + p.id); if (typeof k === 'string') uri = k; } catch (e: any) {}
     }
     connectionUris.push(uri);
@@ -378,6 +386,12 @@ let lastConnError = '';
 
 async function connectToMongo(uri: string): Promise<boolean> {
   lastConnError = '';
+  if (isWeb) {
+    const ok = await webConnectToMongo(uri);
+    if (!ok) lastConnError = 'Connection failed via server';
+    else currentConnUri = uri;
+    return ok;
+  }
   try {
     const client = await MongoClient.connect(uri);
     // Validate the connection by listing databases
@@ -398,6 +412,7 @@ async function connectToMongo(uri: string): Promise<boolean> {
 }
 
 async function queryCollection(dbName: string, collName: string, filter: string): Promise<string> {
+  if (isWeb) return webQueryCollection(dbName, collName, filter);
   if (!mongoClient) return '{"error":"not connected"}';
   try {
     const db = mongoClient.db(dbName);
@@ -412,6 +427,7 @@ async function queryCollection(dbName: string, collName: string, filter: string)
 }
 
 async function updateDocument(dbName: string, collName: string, filter: string, update: string): Promise<number> {
+  if (isWeb) return webUpdateDocument(dbName, collName, filter, update);
   if (!mongoClient) return 0;
   try {
     const db = mongoClient.db(dbName);
@@ -424,6 +440,7 @@ async function updateDocument(dbName: string, collName: string, filter: string, 
 }
 
 async function deleteDocument(dbName: string, collName: string, filter: string): Promise<number> {
+  if (isWeb) return webDeleteDocument(dbName, collName, filter);
   if (!mongoClient) return 0;
   try {
     const db = mongoClient.db(dbName);
@@ -436,6 +453,7 @@ async function deleteDocument(dbName: string, collName: string, filter: string):
 }
 
 async function listDatabases(): Promise<string[]> {
+  if (isWeb) return webListDatabases();
   if (!mongoClient) return [];
   try {
     const result = await mongoClient.listDatabases();
@@ -451,6 +469,7 @@ async function listDatabases(): Promise<string[]> {
 }
 
 async function listCollections(dbName: string): Promise<string[]> {
+  if (isWeb) return webListCollections(dbName);
   if (!mongoClient) return [];
   try {
     const db = mongoClient.db(dbName);
@@ -523,6 +542,32 @@ function showStatus(msg: string, isError: boolean): void {
   textSetString(statusText, msg);
   textSetColor(statusText, isError ? erR : sgR, isError ? erG : sgG, isError ? erB : sgB, 1.0);
   widgetSetHidden(statusText, 0);
+}
+
+// --- Web server status indicator ---
+const webStatusText = Text('');
+textSetFontSize(webStatusText, 12);
+textSetFontFamily(webStatusText, uiFont);
+widgetSetHidden(webStatusText, isWeb ? 0 : 1);
+
+let webServerUp = false;
+
+function updateWebStatus(connected: boolean): void {
+  webServerUp = connected;
+  if (!isWeb) return;
+  if (connected) {
+    textSetString(webStatusText, 'Connected to Mango Server');
+    textSetColor(webStatusText, sgR, sgG, sgB, 1.0);
+  } else {
+    textSetString(webStatusText, 'Server unavailable \u2014 run mango-serve');
+    textSetColor(webStatusText, erR, erG, erB, 1.0);
+  }
+}
+
+if (isWeb) {
+  updateWebStatus(false);
+  webSetStatusCallback(updateWebStatus);
+  webConnect();
 }
 
 // ============================================================
@@ -761,8 +806,8 @@ function showConnectionForm(): void {
 
     // Create the connection profile in SQLite (URI stored in connection_string column)
     const profile: any = createConnection({ name: name, host: displayHost, port: parseInt(displayPort) || 27017, connectionString: uri });
-    // Also try Keychain as backup (may fail on iOS simulator without entitlements)
-    keychainSave('mango-conn-' + profile.id, uri);
+    // Also try Keychain as backup (may fail on iOS simulator without entitlements; skip on web)
+    if (!isWeb) keychainSave('mango-conn-' + profile.id, uri);
 
     formName = '';
     formHost = 'localhost';
@@ -837,6 +882,7 @@ if (mobile) {
 
 // --- Body content below hero ---
 const connBody = VStack(16, [
+  webStatusText,
   statusText,
   connListContainer,
   formContainer,

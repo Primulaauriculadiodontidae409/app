@@ -33,6 +33,9 @@ const config: PerryConfig = {
       framework: 'Win32',
       icon: 'logo/mango-app-icon-256.png',
     },
+    web: {
+      framework: 'DOM',
+    },
   },
 
   build: {

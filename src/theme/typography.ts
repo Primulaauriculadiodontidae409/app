@@ -1,12 +1,14 @@
-import { isMac, isIOS, isAndroid, isWindows } from 'perry-styling';
+import { isMac, isIOS, isAndroid, isWindows, isWeb } from 'perry-styling';
 
 // Platform-specific font families
-export const systemFontFamily = isMac || isIOS ? '.AppleSystemUIFont' :
+export const systemFontFamily = isWeb          ? 'system-ui, -apple-system, sans-serif' :
+                                 isMac || isIOS ? '.AppleSystemUIFont' :
                                  isWindows     ? 'Segoe UI' :
                                  isAndroid     ? 'Roboto' :
                                                  'Ubuntu';
 
-export const monoFontFamily = isMac || isIOS ? 'SF Mono' :
+export const monoFontFamily = isWeb          ? 'ui-monospace, Menlo, Monaco, Consolas, monospace' :
+                               isMac || isIOS ? 'SF Mono' :
                                isWindows     ? 'Cascadia Code' :
                                isAndroid     ? 'Roboto Mono' :
                                                'JetBrains Mono';
