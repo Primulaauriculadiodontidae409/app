@@ -5,7 +5,11 @@
   "main": "src/app.ts",
   "perry": {
     "targets": ["macos", "ios", "android", "linux", "windows"],
-    "icon": "logo/mango-app-icon.svg"
+    "icon": "logo/mango-app-icon.svg",
+    "splash": {
+      "image": "logo/mango-app-icon-256.png",
+      "background": "#FFF5EE"
+    }
   },
   "scripts": {
     "build": "perry build",

@@ -45,6 +45,32 @@ cp "$TEMPLATE_DIR/app/src/main/java/com/perry/app/PerryBridge.kt" "$BUILD_DIR/ap
 cp "$TEMPLATE_DIR/app/src/main/java/com/perry/app/HoneEditorView.kt" "$BUILD_DIR/app/src/main/java/com/perry/app/"
 cp "$TEMPLATE_DIR/app/src/main/res/values/themes.xml" "$BUILD_DIR/app/src/main/res/values/"
 
+# Generate splash screen resources
+mkdir -p "$BUILD_DIR/app/src/main/res/drawable"
+cp "$MANGO_DIR/logo/mango-app-icon-256.png" "$BUILD_DIR/app/src/main/res/drawable/splash_image.png"
+
+cat > "$BUILD_DIR/app/src/main/res/drawable/splash_background.xml" << 'SPLASH_DRAWABLE'
+<?xml version="1.0" encoding="utf-8"?>
+<layer-list xmlns:android="http://schemas.android.com/apk/res/android">
+    <item><color android:color="#FFF5EE"/></item>
+    <item>
+        <bitmap android:gravity="center" android:src="@drawable/splash_image"/>
+    </item>
+</layer-list>
+SPLASH_DRAWABLE
+
+cat > "$BUILD_DIR/app/src/main/res/values/themes.xml" << 'THEMES'
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <style name="Theme.Perry" parent="android:Theme.Material.Light.NoActionBar">
+    </style>
+    <style name="Theme.Perry.Splash" parent="android:Theme.Material.Light.NoActionBar">
+        <item name="android:windowBackground">@drawable/splash_background</item>
+    </style>
+</resources>
+THEMES
+echo "  Generated splash screen resources"
+
 # Copy app assets (logo images, etc.) into APK assets directory
 if [ -d "$MANGO_DIR/logo" ]; then
     cp -r "$MANGO_DIR/logo" "$BUILD_DIR/app/src/main/assets/"
@@ -119,6 +145,7 @@ cat > "$BUILD_DIR/app/src/main/AndroidManifest.xml" << 'MANIFEST'
         <activity
             android:name=".PerryActivity"
             android:exported="true"
+            android:theme="@style/Theme.Perry.Splash"
             android:configChanges="orientation|screenSize|keyboardHidden">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
