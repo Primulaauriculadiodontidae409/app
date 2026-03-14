@@ -810,59 +810,71 @@ function showConnectionForm(): void {
   const uriField = TextField('mongodb+srv://user:pass@cluster.example.com/db', (val: string) => { formUri = val; });
 
   const saveBtn = Button('Save Connection', () => {
-    // Read fields directly from TextFields, fall back to module vars from onChange
-    const name = textfieldGetString(nameField) || formName || 'Untitled';
-    const host = textfieldGetString(hostField) || formHost || 'localhost';
-    const port = textfieldGetString(portField) || formPort || '27017';
-    const user = textfieldGetString(userField) || formUser;
-    const pass = textfieldGetString(passField) || formPass;
-    const rawUri = textfieldGetString(uriField) || formUri;
+    try {
+      const name = textfieldGetString(nameField) || formName || 'Untitled';
+      const host = textfieldGetString(hostField) || formHost || 'localhost';
+      const port = textfieldGetString(portField) || formPort || '27017';
+      const user = textfieldGetString(userField) || formUser;
+      const pass = textfieldGetString(passField) || formPass;
+      const rawUri = textfieldGetString(uriField) || formUri;
 
-    // Build URI from fields if no explicit URI provided
-    let uri = rawUri;
-    if (!uri) {
-      if (user && pass) {
-        uri = 'mongodb://' + encodeURIComponent(user) + ':' + encodeURIComponent(pass) + '@' + host + ':' + port;
-      } else {
-        uri = 'mongodb://' + host + ':' + port;
+      // Build URI from fields if no explicit URI provided
+      let uri = rawUri;
+      if (!uri) {
+        if (user && pass) {
+          uri = 'mongodb://' + encodeURIComponent(user) + ':' + encodeURIComponent(pass) + '@' + host + ':' + port;
+        } else {
+          uri = 'mongodb://' + host + ':' + port;
+        }
       }
-    }
 
-    // Extract host (without port) from URI for display in connection list
-    let displayHost = host;
-    let displayPort = port;
-    const schemeIdx = uri.indexOf('://');
-    if (schemeIdx >= 0) {
-      const afterScheme = uri.substring(schemeIdx + 3);
-      const atIdx = afterScheme.indexOf('@');
-      const hostPart = atIdx >= 0 ? afterScheme.substring(atIdx + 1) : afterScheme;
-      const slashIdx = hostPart.indexOf('/');
-      const hostPortStr = slashIdx >= 0 ? hostPart.substring(0, slashIdx) : hostPart;
-      const colonIdx = hostPortStr.lastIndexOf(':');
-      if (colonIdx >= 0) {
-        displayHost = hostPortStr.substring(0, colonIdx);
-        displayPort = hostPortStr.substring(colonIdx + 1);
-      } else {
-        displayHost = hostPortStr;
+      // Extract host (without port) from URI for display in connection list
+      let displayHost = host;
+      let displayPort = port;
+      const schemeIdx = uri.indexOf('://');
+      if (schemeIdx >= 0) {
+        const afterScheme = uri.substring(schemeIdx + 3);
+        const atIdx = afterScheme.indexOf('@');
+        const hostPart = atIdx >= 0 ? afterScheme.substring(atIdx + 1) : afterScheme;
+        const slashIdx = hostPart.indexOf('/');
+        const hostPortStr = slashIdx >= 0 ? hostPart.substring(0, slashIdx) : hostPart;
+        const colonIdx = hostPortStr.lastIndexOf(':');
+        if (colonIdx >= 0) {
+          displayHost = hostPortStr.substring(0, colonIdx);
+          displayPort = hostPortStr.substring(colonIdx + 1);
+        } else {
+          displayHost = hostPortStr;
+        }
       }
+
+      // Parse port number (avoid parseInt which may not work in Perry AOT)
+      let portNum = 27017;
+      if (displayPort.length > 0) {
+        const p = Number(displayPort);
+        if (p > 0) portNum = p;
+      }
+
+      // Create the connection profile in SQLite
+      const profile: any = createConnection({ name: name, host: displayHost, port: portNum, connectionString: uri });
+      // Also try Keychain as backup
+      if (!isWeb) keychainSave('mango-conn-' + profile.id, uri);
+
+      formName = '';
+      formHost = 'localhost';
+      formPort = '27017';
+      formUser = '';
+      formPass = '';
+      formUri = '';
+      widgetSetHidden(formContainer, 1);
+      widgetSetHidden(connListContainer, 0);
+      loadConnections();
+      refreshConnectionList();
+    } catch (e: any) {
+      showStatus('Error saving: ' + (e.message || e), true);
     }
-
-    // Create the connection profile in SQLite (URI stored in connection_string column)
-    const profile: any = createConnection({ name: name, host: displayHost, port: parseInt(displayPort) || 27017, connectionString: uri });
-    // Also try Keychain as backup (may fail on iOS simulator without entitlements; skip on web)
-    if (!isWeb) keychainSave('mango-conn-' + profile.id, uri);
-
-    formName = '';
-    formHost = 'localhost';
-    formPort = '27017';
-    formUser = '';
-    formPass = '';
-    formUri = '';
-    widgetSetHidden(formContainer, 1);
-    widgetSetHidden(connListContainer, 0);
-    loadConnections();
-    refreshConnectionList();
   });
+
+  buttonSetTextColor(saveBtn, moR, moG, moB, 1.0);
 
   const cancelBtn = makeGhostBtn('Cancel', () => {
     widgetSetHidden(formContainer, 1);
