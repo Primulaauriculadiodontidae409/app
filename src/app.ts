@@ -1255,7 +1255,7 @@ function displayDocs(jsonStr: string): void {
       widgetSetHidden(delConfirmNo, 0);
     });
 
-    const docHeader = HStack(6, [idLabel, Spacer(), delConfirmLabel, delConfirmYes, delConfirmNo, cardDelBtn, editBtn]);
+    const docHeader = HStack(6, [idLabel, Spacer(), delConfirmLabel, delConfirmYes, delConfirmNo, editBtn, cardDelBtn]);
     widgetAddChild(card, docHeader);
 
     // Field rows (skip _id)
