@@ -1106,6 +1106,8 @@ function showEditView(docJson: string): void {
   const editorBox = VStack(0, []);
   widgetSetHeight(editorBox, 200);
   widgetAddChild(editorBox, jsonEditor.widget);
+  widgetMatchParentWidth(jsonEditor.widget);
+  widgetMatchParentHeight(jsonEditor.widget);
 
   const saveBtn = makePrimaryBtn('Save Changes', async () => {
     showStatus('Saving...', false);
