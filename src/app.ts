@@ -687,7 +687,7 @@ function refreshConnectionList(): void {
     setCornerRadius(accentBar, 3);
     setPadding(accentBar, 20, 3, 20, 3);
 
-    const nameText = makeLabel(connectionNames[i] || 'Untitled', 15, true);
+    const nameText = makeLabel(maskPassword(connectionNames[i]) || 'Untitled', 15, true);
 
     const rawUri = connectionUris[i];
     const hostPort = rawUri ? maskPassword(rawUri) : `${connectionHosts[i]}:${connectionPorts[i]}`;
@@ -1625,18 +1625,27 @@ widgetAddChild(enableWrap, enableBtn);
 widgetSetHidden(disableWrap, isAnalyticsEnabled() ? 0 : 1);
 widgetSetHidden(enableWrap, isAnalyticsEnabled() ? 1 : 0);
 
-const analyticsRow = HStack(8, [analyticsLabel, Spacer(), analyticsStatusText, disableWrap, enableWrap]);
+let analyticsRow: any;
+if (mobile) {
+  const analyticsControls = HStack(8, [analyticsStatusText, disableWrap, enableWrap]);
+  analyticsRow = VStack(8, [analyticsLabel, analyticsControls]);
+} else {
+  analyticsRow = HStack(8, [analyticsLabel, Spacer(), analyticsStatusText, disableWrap, enableWrap]);
+}
 
-const backBtn = Button('Back', () => {
+const backBtn = Button('< Back', () => {
   const prev = getState('previousScreen');
   showScreen(prev === '1' ? 1 : 0);
 });
 buttonSetBordered(backBtn, 0);
 buttonSetTextColor(backBtn, moR, moG, moB, 1.0);
+if (mobile) setPadding(backBtn, 8, 4, 8, 4);
 
 // Header card with centered logo, title, tagline
+const infoLogoRow = HStack(16, [infoLogo, VStack(4, [infoTitle, infoVersion])]);
+if (mobile) stackSetAlignment(infoLogoRow, 0); // Fill — prevent VStack child from collapsing on Android
 const infoHeaderCard = VStack(12, [
-  HStack(16, [infoLogo, VStack(4, [infoTitle, infoVersion])]),
+  infoLogoRow,
   infoTagline,
   Divider(),
   infoAuthor,
@@ -1655,8 +1664,10 @@ widgetSetBackgroundColor(infoSettingsCard, sfR, sfG, sfB, 1.0);
 setCornerRadius(infoSettingsCard, 14);
 setPadding(infoSettingsCard, 20, 28, 20, 28);
 
+const backRow = HStack(8, [backBtn, Spacer()]);
+if (mobile) stackSetAlignment(backRow, 0); // Fill — prevent collapse on Android
 const infoBody = VStack(12, [
-  HStack(8, [backBtn, Spacer()]),
+  backRow,
   infoHeaderCard,
   settingsHeader,
   infoSettingsCard,

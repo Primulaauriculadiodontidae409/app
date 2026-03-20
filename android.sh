@@ -4,7 +4,7 @@ set -e
 PERRY_DIR="$(cd "$(dirname "$0")/../perry" && pwd)"
 MANGO_DIR="$(cd "$(dirname "$0")" && pwd)"
 APP_NAME="mango-android"
-PACKAGE_ID="com.perry.mango"
+PACKAGE_ID="com.skelpo.mango"
 NDK_VERSION="28.0.12433566"
 BUILD_DIR="$MANGO_DIR/${APP_NAME}-build"
 
@@ -21,7 +21,7 @@ echo "==> Building perry-stdlib + perry-ui-android for Android (aarch64)..."
 cd "$PERRY_DIR"
 # Build without email feature to avoid OpenSSL cross-compile dependency
 cargo build --release \
-  -p perry-stdlib --no-default-features --features "http-server,http-client,database,compression,websocket,image,scheduler,ids,html-parser,rate-limit,validation" \
+  -p perry-stdlib --no-default-features --features "http-server,http-client,database,compression,websocket,image,scheduler,ids,html-parser,rate-limit,validation,crypto" \
   -p perry-ui-android \
   --target aarch64-linux-android 2>&1 | grep -E '(Compiling|Finished|error)'
 
@@ -44,6 +44,16 @@ cp "$TEMPLATE_DIR/app/src/main/java/com/perry/app/PerryActivity.kt" "$BUILD_DIR/
 cp "$TEMPLATE_DIR/app/src/main/java/com/perry/app/PerryBridge.kt" "$BUILD_DIR/app/src/main/java/com/perry/app/"
 cp "$TEMPLATE_DIR/app/src/main/java/com/perry/app/HoneEditorView.kt" "$BUILD_DIR/app/src/main/java/com/perry/app/"
 cp "$TEMPLATE_DIR/app/src/main/res/values/themes.xml" "$BUILD_DIR/app/src/main/res/values/"
+
+# Generate launcher icon mipmap resources
+ICON_SRC="$MANGO_DIR/logo/mango-app-icon-512.png"
+for density_size in "mdpi 48" "hdpi 72" "xhdpi 96" "xxhdpi 144" "xxxhdpi 192"; do
+    density="${density_size%% *}"
+    size="${density_size##* }"
+    mkdir -p "$BUILD_DIR/app/src/main/res/mipmap-$density"
+    sips -z "$size" "$size" "$ICON_SRC" --out "$BUILD_DIR/app/src/main/res/mipmap-$density/ic_launcher.png" >/dev/null 2>&1
+done
+echo "  Generated launcher icon mipmaps"
 
 # Generate splash screen resources
 mkdir -p "$BUILD_DIR/app/src/main/res/drawable"
@@ -89,7 +99,7 @@ android {
     compileSdk = 35
 
     defaultConfig {
-        applicationId = "com.perry.mango"
+        applicationId = "com.skelpo.mango"
         minSdk = 24
         targetSdk = 35
         versionCode = 1
@@ -139,6 +149,7 @@ cat > "$BUILD_DIR/app/src/main/AndroidManifest.xml" << 'MANIFEST'
     <application
         android:allowBackup="true"
         android:label="Mango"
+        android:icon="@mipmap/ic_launcher"
         android:theme="@android:style/Theme.Material.Light.NoActionBar"
         android:usesCleartextTraffic="true">
 

@@ -11,7 +11,7 @@
 set -e
 
 MANGO_DIR="$(cd "$(dirname "$0")" && pwd)"
-BUNDLE_ID="com.perry.app-ios-sim"
+BUNDLE_ID="com.skelpo.mango"
 SCREENSHOT_DIR="$MANGO_DIR/test-screenshots"
 mkdir -p "$SCREENSHOT_DIR"
 

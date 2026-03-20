@@ -4,7 +4,7 @@ set -e
 PERRY_DIR="$(cd "$(dirname "$0")/../perry" && pwd)"
 MANGO_DIR="$(cd "$(dirname "$0")" && pwd)"
 APP_NAME="app-ios-sim"
-BUNDLE_ID="com.perry.$APP_NAME"
+BUNDLE_ID="com.skelpo.mango"
 
 echo "==> Building perry-stdlib + perry-ui-ios for iOS simulator..."
 cd "$PERRY_DIR"
